@@ -34,5 +34,15 @@ class Job(Base):
     location = Column(String)
     status = Column(String)  # 'posted' / 'assigned' / 'completed'
 
+# Job Application Table
+class JobApplication(Base):
+    __tablename__ = "job_applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer)  # FK to Job.id
+    worker_id = Column(Integer)  # FK to User.id
+    response = Column(String, default="pending") # 'pending' / 'accepted' / 'rejected'
+    assigned = Column(Boolean, default=False)
+
 # Create the database tables
 Base.metadata.create_all(bind=engine)

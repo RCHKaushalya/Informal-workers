@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
-from database.db import SessionLocal, User, Job
-from models import UserCreate, JobCreate
+from database.db import SessionLocal, User, Job, JobApplication
+from models import UserCreate, JobCreate, JobResponse
 
 app = FastAPI()
 
@@ -71,3 +71,63 @@ def list_jobs(location: str = None, db: Session = Depends(get_db)):
         jobs = jobs.filter(Job.location == location)
     jobs = jobs.all()
     return {"jobs": jobs}
+
+# Worker Responds to Job (API Endpoint)
+@app.post("/respond-job/")
+def respond_job(response: JobResponse, db: Session = Depends(get_db)):
+    # Check if the job exists
+    job = db.query(Job).filter(Job.id == response.job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Check if the worker exists
+    worker = db.query(User).filter(User.id == response.worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    # Create or update job application
+    job_application = db.query(JobApplication).filter(
+        JobApplication.job_id == response.job_id,
+        JobApplication.worker_id == response.worker_id
+    ).first()
+
+    if job_application:
+        job_application.response = response.response
+    else:
+        job_application = JobApplication(
+            job_id=response.job_id,
+            worker_id=response.worker_id,
+            response=response.response
+        )
+        db.add(job_application)
+
+    db.commit()
+    db.refresh(job_application)
+    return {"message": f"Job response recorded: {job_application.response}"}
+
+# API Endpoint to List Interested Workers for a Job
+@app.get("/job/{job_id}/applicants/")
+def get_applicants(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    applications = db.query(JobApplication).filter(
+        JobApplication.job_id == job_id,
+        JobApplication.response == "liked"
+    ).all()
+
+    applicants = []
+    for app in applications:
+        worker = db.query(User).filter(User.id == app.worker_id).first()
+                
+        if worker:
+            applicants.append({
+                "worker_id": worker.id,
+                "name": worker.name,
+                "phone": worker.phone,
+                "language": worker.language,
+                "location": worker.location
+            })
+
+    return {"applicants": applicants}
