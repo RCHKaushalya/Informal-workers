@@ -8,3 +8,9 @@ class UserCreate(BaseModel):
     language: str
     location: str
     sms_enabled: bool = False
+
+class JobCreate(BaseModel):
+    title: str
+    description: str
+    posted_by: int  # User ID of the poster
+    location: str

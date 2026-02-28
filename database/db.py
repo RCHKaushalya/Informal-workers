@@ -23,5 +23,16 @@ class User(Base):
     location = Column(String)
     sms_enabled = Column(Boolean, default=False)
 
+# Job Table
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    description = Column(String)
+    posted_by = Column(Integer)  # User ID of the poster, FK to User.id
+    location = Column(String)
+    status = Column(String)  # 'posted' / 'assigned' / 'completed'
+
 # Create the database tables
 Base.metadata.create_all(bind=engine)
