@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from database.db import SessionLocal, User, Job, JobApplication
 from models import UserCreate, JobCreate, JobResponse
+from sms_utils import send_sms, receive_sms
 
 app = FastAPI()
 
@@ -131,3 +132,57 @@ def get_applicants(job_id: int, db: Session = Depends(get_db)):
             })
 
     return {"applicants": applicants}
+
+# API Endpoint to send SMS to worker
+@app.post("/notify-worker/{job_id}")
+def notify_worker(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    workers =  db.query(User).filter(
+        User.sms_enabled == True,
+        User.location == job.location,
+        User.user_type == "worker"
+    ).all()
+
+    for worker in workers:
+        message = f'Job Alert: {job.title} - {job.description} reply with "1" to like or "0" to reject.'
+        send_sms(worker.phone, message)
+    
+    return {"message": f"Notifications sent to {len(workers)} workers"}
+
+# API Endpoint to receive SMS responses from workers
+@app.post("/process-sms/")
+def process_sms(db: Session = Depends(get_db)):
+    job_id, worker_id, response = receive_sms()
+
+    # Check if the job exists
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Check if the worker exists
+    worker = db.query(User).filter(User.id == worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    # Create or update job application
+    job_application = db.query(JobApplication).filter(
+        JobApplication.job_id == job_id,
+        JobApplication.worker_id == worker_id
+    ).first()
+
+    if job_application:
+        job_application.response = response
+    else:
+        job_application = JobApplication(
+            job_id=job_id,
+            worker_id=worker_id,
+            response=response
+        )
+        db.add(job_application)
+
+    db.commit()
+    db.refresh(job_application)
+    return {"message": f"SMS response recorded: {response}"}
