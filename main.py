@@ -7,6 +7,7 @@ from language_messages import MESSAGES
 from ranking import calculate_score
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -225,3 +226,5 @@ def assign_job(job_id: int, worker_id: int, db: Session = Depends(get_db)):
 @app.get('/admin')
 def admin_page(request: Request):
     return templates.TemplateResponse("admin.html", {"request": request})
+
+app.mount("/app", StaticFiles(directory="frontend", html=True), name="app")
