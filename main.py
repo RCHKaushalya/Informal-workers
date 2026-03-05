@@ -3,8 +3,13 @@ from sqlalchemy.orm import Session
 from database.db import SessionLocal, User, Job, JobApplication
 from models import UserCreate, JobCreate, JobResponse
 from sms_utils import send_sms, receive_sms
+from language_messages import MESSAGES
+from ranking import calculate_score
+from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
 
 app = FastAPI()
+templates = Jinja2Templates(directory="templates")
 
 # Dependency to get DB session
 def get_db():
@@ -123,13 +128,17 @@ def get_applicants(job_id: int, db: Session = Depends(get_db)):
         worker = db.query(User).filter(User.id == app.worker_id).first()
                 
         if worker:
+            score = calculate_score(worker)
             applicants.append({
                 "worker_id": worker.id,
                 "name": worker.name,
                 "phone": worker.phone,
                 "language": worker.language,
-                "location": worker.location
+                "location": worker.location,
+                "score": score
             })
+    
+    applicants.sort(key=lambda x: x['score'], reverse=True)  # Sort by score descending
 
     return {"applicants": applicants}
 
@@ -147,7 +156,8 @@ def notify_worker(job_id: int, db: Session = Depends(get_db)):
     ).all()
 
     for worker in workers:
-        message = f'Job Alert: {job.title} - {job.description} reply with "1" to like or "0" to reject.'
+        lang = worker.language
+        message = MESSAGES['job_alert'][lang].format(title=job.title)
         send_sms(worker.phone, message)
     
     return {"message": f"Notifications sent to {len(workers)} workers"}
@@ -186,3 +196,32 @@ def process_sms(db: Session = Depends(get_db)):
     db.commit()
     db.refresh(job_application)
     return {"message": f"SMS response recorded: {response}"}
+
+# Endpoint to assign job to worker
+@app.post("/assign-job/")
+def assign_job(job_id: int, worker_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    worker = db.query(User).filter(User.id == worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    job_application = db.query(JobApplication).filter(
+        JobApplication.job_id == job_id,
+        JobApplication.worker_id == worker_id
+    ).first()
+
+    if not job_application or job_application.response != "liked":
+        raise HTTPException(status_code=400, detail="Worker did not like this job")
+
+    job_application.assigned = True
+    job.status = "assigned"
+    db.commit()
+
+    return {"message": f"Worker {worker.name} assigned to job"}
+
+@app.get('/admin')
+def admin_page(request: Request):
+    return templates.TemplateResponse("admin.html", {"request": request})

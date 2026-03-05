@@ -22,6 +22,8 @@ class User(Base):
     language = Column(String)
     location = Column(String)
     sms_enabled = Column(Boolean, default=False)
+    completed_jobs = Column(Integer, default=0)
+    rating = Column(Integer, default=5)
 
 # Job Table
 class Job(Base):
